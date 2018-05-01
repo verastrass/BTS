@@ -23,24 +23,26 @@ class TupleSpace(object):
         logging.basicConfig(filename='infrastructure_log.txt', level=logging.DEBUG, format="%(asctime)s - %(message)s")
         logging.info('Infrastructure on port ' + str(self.INFRASTRUCTURE_PORT))
 
-    def enter_r(self, pid):
-        sockets = []
+    def enter_r(self, pid, temp):
+        ts = {i: [None, None] for i in self.U}  # port: (socket, set)
         for i in self.U:
-            sock = connect_to_server(i)
-            if sock is not None:
-                send_message(sock, {'op': 'enter', 'pid': pid})
-                if i in self.QR:
-                    sockets.append(sock)
-                else:
-                    sock.close()
+            ts[i][0] = connect_to_server(i)
+            if ts[i][0] is not None:
+                send_message(ts[i][0], {'op': 'enter', 'pid': pid, 'temp': temp})
+                if i not in self.QR:
+                    ts[i][0].close()
 
-        for i in sockets:
-            resp = get_message(i)
-            i.close()
+        for i in ts.keys():
+            if ts[i][0] is not None:
+                resp = get_message(ts[i][0])
+                # i.close()
+                if resp['resp'] != 'go':
+                    logging.info('Wrong respond in enter_r while entering cs')
+                ts[i][1] = resp['ts']
+            else:
+                ts.pop(i, None)
 
-            if resp['resp'] != 'go':
-                logging.info('Wrong respond in enter_r while entering cs')
-                # raise Exception('Wrong respond in enter_r')
+        return tuple(self.rdp(temp, ts), ts)
 
     def exit_r(self, pid):
         for i in self.U:
@@ -50,6 +52,10 @@ class TupleSpace(object):
                 sock.close()
             else:
                 logging.info('Cannot exit cs with pid: ' + str(pid))
+
+    def paxos(self, pid, t, ts):
+        for i in ts.keys():
+            send_message(ts[i][0], {'op': 'inp', 'tup': t})
 
     def out(self, t):
         for i in self.QW:
@@ -61,26 +67,27 @@ class TupleSpace(object):
             else:
                 logging.info('In out: cannot connect to server ' + str(i))
 
-    def rdp(self, temp):
-        ts = {i: [None, None] for i in self.U}  # port: (socket, set)
-        for i in self.U:
-            ts[i][0] = connect_to_server(i)
-            if ts[i][0] is not None:
-                send_message(ts[i][0], {'op': 'rd', 'temp': temp})
-                logging.info('Send to server ' + str(i) + ' temp: ' + str(temp))
+    def rdp(self, temp, ts=None):
+        if ts is None:
+            ts = {i: [None, None] for i in self.U}  # port: (socket, set)
+            for i in self.U:
+                ts[i][0] = connect_to_server(i)
+                if ts[i][0] is not None:
+                    send_message(ts[i][0], {'op': 'rd', 'temp': temp})
+                    logging.info('Send to server ' + str(i) + ' temp: ' + str(temp))
 
-        qr = set()
-        for i in self.U:
-            if ts[i][0] is not None:
-                ts[i][1] = get_message(ts[i][0])['ts']
-                logging.info('Get from server ' + str(i) + ' ts: ' + str(ts[i][1]))
-                ts[i][0].close()
-                qr.add(i)
-            else:
-                ts[i][1] = None
+            qr = set()
+            for i in self.U:
+                if ts[i][0] is not None:
+                    ts[i][1] = get_message(ts[i][0])['ts']
+                    logging.info('Receive from server ' + str(i) + ' ts: ' + str(ts[i][1]))
+                    ts[i][0].close()
+                    qr.add(i)
+                else:
+                    ts[i][1] = None
 
-            if qr.issubset(self.QR):
-                break
+                if qr.issubset(self.QR):
+                    break
 
         t = None
         for i in combinations(ts.keys(), self.AMOUNT_OF_ENEMIES + 1):
@@ -99,17 +106,15 @@ class TupleSpace(object):
 
     def inp(self, pid, temp):
         while True:
-            self.enter_r(pid)
-            logging.info('Enter in cs with pid: ' + str(pid))
-            t = self.rdp(temp)
+            t, ts = self.enter_r(pid, temp)
+            logging.info('Pid: ' + str(pid) + ' temp: ' + str(temp) + ' t: ' + str(t))
 
             if t is None:
                 self.exit_r(pid)
                 logging.info('Exit from cs with pid: ' + str(pid))
                 return None
 
-            d = None
-            # paxos(p, P, A, L, t)
+            d = self.paxos(pid, t, ts)
             self.exit_r(pid)
             logging.info('Exit from cs with pid: ' + str(pid))
 
@@ -147,7 +152,7 @@ class TupleSpace(object):
                       ''.join(str(i)+' ' for i in self.U), stdout=PIPE, stderr=PIPE, shell=True)
             except CalledProcessError:
                 logging.info("Cannot start server on port " + str(self.U[i]))
-            logging.info("Started server on port " + str(self.U[i]))
+            logging.info("Start server on port " + str(self.U[i]))
 
     def stop_servers(self):
         for i in self.U:
