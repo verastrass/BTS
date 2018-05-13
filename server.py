@@ -18,7 +18,6 @@ AMOUNT_OF_DECISIONS1 = 0
 DECISIONS2 = {}
 AMOUNT_OF_DECISIONS2 = 0
 SERVERS = []
-ACCEPTED_VALUE = None
 IS_ACCEPTED1 = False
 IS_ACCEPTED2 = False
 
@@ -82,97 +81,127 @@ def rdp(sock, temp):
         return temp_set
 
 
-def inp(sock, tup):
-    d = paxos(sock, tup)
-    if d is not None:
-        if d not in TS:
-            RS.add(d)
-            logging.info('Add to RS: ' + str(d))
+def inp(sock, p, tup):
+    if QR[0][1] == p:
+        d = paxos(sock, tup)
+        if d is not None:
+            if d not in TS:
+                RS.add(d)
+                logging.info('Add to RS: ' + str(d))
 
-        TS.remove(d)
+            TS.remove(d)
 
 
 def paxos(sock, tup):
-    global IS_ACCEPTED1, IS_ACCEPTED2, ACCEPTED_VALUE, SERVERS, DECISIONS1,\
-        SERVER_PORT, AMOUNT_OF_DECISIONS1, DECISIONS2, AMOUNT_OF_DECISIONS2
+    global IS_ACCEPTED1, IS_ACCEPTED2, SERVERS, DECISIONS1, SERVER_PORT,\
+        AMOUNT_OF_DECISIONS1, DECISIONS2, AMOUNT_OF_DECISIONS2
     if tup in TS:
-        ACCEPTED_VALUE = tup
+        accepted_value = tup
     else:
-        ACCEPTED_VALUE = None
+        accepted_value = None
+
+    logging.info("accepted value: " + str(accepted_value))
 
     AMOUNT_OF_DECISIONS1 = 0
-    DECISIONS1 = {i: [None, False, None] for i in SERVERS}  # port: (sock, ans_flag, tup)
+    DECISIONS1 = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup)
     connected = 0
     for i in SERVERS:
         if i == SERVER_PORT:
-            DECISIONS1[i][1] = True
-            DECISIONS1[i][1] = ACCEPTED_VALUE
+            DECISIONS1[i][0] = True
+            DECISIONS1[i][1] = accepted_value
         else:
-            DECISIONS1[i][0] = connect_to_server(i)
-            if DECISIONS1[i][0] is not None:
+            serv_sock = connect_to_server(i)
+            if serv_sock is not None:
                 connected += 1
-                send_message(DECISIONS1[i][0],
-                             {'op': 'accept1', 'pid': QR[0][1], 'port': SERVER_PORT, 'tup': ACCEPTED_VALUE})
-                DECISIONS1[i][0].close()
+                send_message(serv_sock,
+                             {'op': 'accept1', 'pid': QR[0][1], 'port': SERVER_PORT, 'tup': accepted_value})
+                logging.info("Send accepted value on port " + str(i))
+                serv_sock.close()
             else:
                 DECISIONS1.pop(i)
 
-    while AMOUNT_OF_DECISIONS1 < connected:
-        pass
+    i = 500
+    while AMOUNT_OF_DECISIONS1 < connected and i > 0:
+        i -= 1
 
     IS_ACCEPTED1 = True
-    tup_dict = {}  # port: tup_dict
+    logging.info("IS_ACCEPTED1 = True")
+    # logging.info("DECISIONS1: " + str(DECISIONS1))
+    tup_dict = {}  # port: tup // ACCEPT1 results
     for i in DECISIONS1.keys():
-        tup_dict[i] = DECISIONS1[i][2]
+        tup_dict[i] = DECISIONS1[i][1]
 
     AMOUNT_OF_DECISIONS2 = 0
-    DECISIONS2 = {i: [None, False, None] for i in SERVERS}  # port: (sock, ans_flag, tup_dict)
+    DECISIONS2 = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup_dict)
     connected = 0
     for i in DECISIONS1.keys():
         if i == SERVER_PORT:
-            DECISIONS1[i][1] = True
-            DECISIONS1[i][1] = ACCEPTED_VALUE
+            DECISIONS2[i][0] = True
+            DECISIONS2[i][1] = tup_dict
         else:
-            DECISIONS2[i][0] = connect_to_server(i)
-            if DECISIONS2[i][0] is not None:
+            serv_sock = connect_to_server(i)
+            if serv_sock is not None:
                 connected += 1
-                send_message(DECISIONS2[i][0],
+                send_message(serv_sock,
                              {'op': 'accept2', 'pid': QR[0][1], 'port': SERVER_PORT, 'tup_dict': tup_dict})
-                DECISIONS2[i][0].close()
+                logging.info("Send accepted values on port " + str(i))
+                serv_sock.close()
             else:
                 DECISIONS2.pop(i)
 
-    while AMOUNT_OF_DECISIONS2 < connected:
-        pass
+    i = 500
+    while AMOUNT_OF_DECISIONS2 < connected and i > 0:
+        i -= 1
 
     IS_ACCEPTED2 = True
+    logging.info("IS_ACCEPTED2 = True")
+    # logging.info("DECISIONS2: " + str(DECISIONS2))
     tup_list1 = []
-    for i in tup_dict.keys():
-        tup_list2 = []
-        for j in DECISIONS2.keys():
-            tup_list2.append(DECISIONS2[j][i])
-        c = Counter(tup_list2)
-        tup_list1.append(c.most_common(1)[0][0])
+    try:
+        for i in tup_dict.keys():
+            if i == SERVER_PORT:
+                tup_list1.append(accepted_value)
+                continue
+            tup_list2 = []
+            for j in DECISIONS2.keys():
+                if j == i or not DECISIONS2[j][0]:
+                    continue
+                tup_list2.append(DECISIONS2[j][1][i])
+            # logging.info("tup_list2: " + str(tup_list2))
+            c = Counter(tup_list2)
+            mc = c.most_common(1)[0]
+            # logging.info("mc: " + str(mc))
+            if mc[1] > len(tup_list2) // 2:
+                tup_list1.append(mc[0])
+            else:
+                tup_list1.append(None)
+    except Exception as e:
+        logging.info("Error" + str(e))
 
+    # logging.info("tup_list1: " + str(tup_list1))
     c = Counter(tup_list1)
-    ACCEPTED_VALUE = c.most_common(1)[0][0]
-    send_message(sock, {'resp': ACCEPTED_VALUE})
+    accepted_value = c.most_common(1)[0][0]
+    send_message(sock, {'resp': accepted_value})
+    logging.info("Send twice accepted value: " + str(accepted_value))
+    return accepted_value
 
 
-def accept1(pid, server_port, tup):
+def accept1(p, server_port, tup):
     global DECISIONS1, QR, AMOUNT_OF_DECISIONS1
-    if QR[0][1] == pid and not DECISIONS1[server_port][1]:
-        DECISIONS1[server_port][2] = tup
-        DECISIONS1[server_port][1] = True
+    if QR[0][1] == p and not DECISIONS1[server_port][0]:
+        DECISIONS1[server_port][1] = tup
+        DECISIONS1[server_port][0] = True
         AMOUNT_OF_DECISIONS1 += 1
+        logging.info("Get accepted value from port " + str(server_port))
 
 
-def accept2(pid, server_port, tup_dict):
+def accept2(p, server_port, tup_dict):
     global DECISIONS2, AMOUNT_OF_DECISIONS2, IS_ACCEPTED1, QR
-    if IS_ACCEPTED1 and QR[0][1] == pid and not DECISIONS2[server_port][1]:
-        DECISIONS2[server_port][2] = tup_dict
-        DECISIONS2[server_port][1] = True
+    if QR[0][1] == p and not DECISIONS2[server_port][0]:
+        DECISIONS2[server_port][1] = tup_dict
+        DECISIONS2[server_port][0] = True
         AMOUNT_OF_DECISIONS2 += 1
+        logging.info("Get accepted values from port " + str(server_port))
 
 
 def worker(client):
@@ -184,7 +213,7 @@ def worker(client):
     elif req['op'] == 'rd':
         rdp(client, req['temp'])
     elif req['op'] == 'inp':
-        inp(client, req['tup'])
+        inp(client, req['pid'], req['tup'])
     elif req['op'] == 'enter':
         enter_r(client, req['pid'], req['temp'])
     elif req['op'] == 'exit':
@@ -199,6 +228,8 @@ def worker(client):
     else:
         logging.info('Wrong request: ' + str(req))
 
+    client.close()
+
 
 def read_from_ts_file(file_name):
     global TS
@@ -209,7 +240,6 @@ def read_from_ts_file(file_name):
         # logging.info("TS: " + str(data))
 
 
-""""""
 parser = argparse.ArgumentParser()
 parser.add_argument('id', type=int)
 parser.add_argument('port', type=int)
@@ -217,21 +247,21 @@ parser.add_argument('TSFile', type=str)
 parser.add_argument('quorum', nargs='+', type=int)
 args = parser.parse_args()
 SERVER_ID, SERVER_PORT, ts_file, SERVERS = args.id, args.port, args.TSFile, args.quorum
+"""
 
-
-# SERVER_ID, SERVER_PORT, ts_file, SERVERS = 0, 1239, 'right.txt', [1239]
+SERVER_ID, SERVER_PORT, ts_file, SERVERS = 0, 1235, 'right.txt', [1234, 1235]
+"""
 
 logging.basicConfig(filename=str(SERVER_ID) + 'log.txt', level=logging.DEBUG, format="%(asctime)s - %(message)s")
 logging.info('Server ' + str(SERVER_ID) + ' on port ' + str(SERVER_PORT))
 read_from_ts_file(ts_file)
 logging.info('Red from file: ' + str(ts_file))
 s = socket(AF_INET, SOCK_STREAM)
-# s.settimeout(10)
 s.bind(('', SERVER_PORT))
 s.listen(1)
 
-"""
-with ThreadPoolExecutor(10) as pool:
+
+with ThreadPoolExecutor(20) as pool:
     while THREAD_POOL_ON:
         try:
             client_s, client_addr = s.accept()
@@ -247,6 +277,6 @@ while THREAD_POOL_ON:
     except error:
         logging.error('socket.error in main while accepting')
         break
-    worker(client_s)
-
+ worker(client_s)
+"""
 s.close()

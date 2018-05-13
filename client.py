@@ -32,7 +32,7 @@ class Client(object):
     def in_op(self, temp):
         sock = connect_to_server(self.port)
         if sock is not None:
-            send_message(sock, {'op': 'rdp', 'temp': temp})
+            send_message(sock, {'op': 'inp', 'temp': temp})
             resp = get_message(sock)
             sock.close()
             return resp['resp']

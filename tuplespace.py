@@ -2,6 +2,7 @@ from secondary_functions import *
 from subprocess import Popen, CalledProcessError, PIPE
 from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations
+from collections import Counter
 import logging
 # from OpenSSL import SSL
 # from random import sample
@@ -35,14 +36,14 @@ class TupleSpace(object):
         for i in ts.keys():
             if ts[i][0] is not None:
                 resp = get_message(ts[i][0])
-                # i.close()
+                ts[i][0].close()
                 if resp['resp'] != 'go':
                     logging.info('Wrong respond in enter_r while entering cs')
                 ts[i][1] = resp['ts']
             else:
                 ts.pop(i, None)
 
-        return tuple(self.rdp(temp, ts), ts)
+        return tuple([self.rdp(temp, ts), ts])
 
     def exit_r(self, pid):
         for i in self.U:
@@ -55,7 +56,17 @@ class TupleSpace(object):
 
     def paxos(self, pid, t, ts):
         for i in ts.keys():
-            send_message(ts[i][0], {'op': 'inp', 'tup': t})
+            ts[i][0] = connect_to_server(i)
+            if ts[i][0] is not None:
+                send_message(ts[i][0], {'op': 'inp', 'pid': pid, 'tup': t})
+
+        tup_list = []
+        for i in ts.keys():
+            tup_list.append(get_message(ts[i][0])['resp'])
+            ts[i][0].close()
+
+        c = Counter(tup_list)
+        return c.most_common(1)[0][0]
 
     def out(self, t):
         for i in self.QW:
@@ -147,9 +158,9 @@ class TupleSpace(object):
         for i in range(ind1, ind2):
             try:
                 s = 'python server.py '+str(i)+' '+str(self.U[i])+' '+str(file)+' '+''.join(str(i)+' ' for i in self.U)
-                logging.info(s)
-                Popen('python server.py '+str(i)+' '+str(self.U[i])+' '+str(file)+' '+
-                      ''.join(str(i)+' ' for i in self.U), stdout=PIPE, stderr=PIPE, shell=True)
+                # logging.info(s)
+                Popen('python server.py ' + str(i) + ' ' + str(self.U[i]) + ' ' + str(file) + ' ' +
+                      ''.join(str(i) + ' ' for i in self.U), stdout=PIPE, stderr=PIPE, shell=True)
             except CalledProcessError:
                 logging.info("Cannot start server on port " + str(self.U[i]))
             logging.info("Start server on port " + str(self.U[i]))
@@ -174,10 +185,8 @@ class TupleSpace(object):
         s = socket(AF_INET, SOCK_STREAM)
         s.bind(('', self.INFRASTRUCTURE_PORT))
         s.listen(1)
-        # tls_s = wrap_socket(s, ssl_version=PROTOCOL_TLS_CLIENT)
 
-        """
-         with ThreadPoolExecutor(10) as pool:
+        with ThreadPoolExecutor(10) as pool:
             while self.THREAD_POOL_ON:
                 try:
                     client_s, client_addr = s.accept()
@@ -187,7 +196,8 @@ class TupleSpace(object):
                     self.THREAD_POOL_ON = False
                 else:
                     pool.submit(self.worker, client_s, self.AMOUNT_OF_CLIENTS)
-                    self.stop_servers()
+
+        self.stop_servers()
         s.close()
         """
         while self.THREAD_POOL_ON:
@@ -201,5 +211,5 @@ class TupleSpace(object):
                 self.worker(client_s, self.AMOUNT_OF_CLIENTS)
 
         s.close()
-
+        """
         return True
