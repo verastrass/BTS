@@ -1,10 +1,10 @@
 from socket import socket, AF_INET, SOCK_STREAM, error
-import _pickle as pickle
+import pickle # _pickle as
 import json
 
 
 def get_message(sock):
-    # sock.settimeout(15)
+    sock.settimeout(50)
     msg = b""
     tmp = b""
 
@@ -17,7 +17,11 @@ def get_message(sock):
             break
         msg += tmp
     msg += tmp
-    return pickle.loads(msg)
+
+    if len(msg) > 0:
+        return pickle.loads(msg)
+    else:
+        return None
 
 
 def send_message(sock, msg):
@@ -26,7 +30,7 @@ def send_message(sock, msg):
 
 def connect_to_server(port):
     sock = socket(AF_INET, SOCK_STREAM)
-    i = 100
+    i = 50
 
     while i:
         try:
@@ -39,9 +43,9 @@ def connect_to_server(port):
     return None
 
 
-def create_ts_file(file_name, init_num, amount=500):
+def create_ts_file(file_name, init_num, amount=500, length=100):
     with open(file_name, 'w') as f:
         list_of_tuples = list()
         for i in range(init_num * amount, (init_num + 1) * amount):
-            list_of_tuples.append(tuple(j for j in range(i, i + 100)))
+            list_of_tuples.append(tuple(j for j in range(i, i + length)))
         json.dump(list_of_tuples, f)

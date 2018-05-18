@@ -13,20 +13,25 @@ class Client(object):
         if sock is not None:
             send_message(sock, {'op': 'out', 'tup': tup})
             sock.close()
+            logging.info('OUT: ' + str(tup))
         else:
-            logging.info('Cannot connect to server in out_op')
+            logging.info('OUT_OP: cannot connect to server')
 
     def rd_op(self, temp):
         sock = connect_to_server(self.port)
         if sock is not None:
             send_message(sock, {'op': 'rdp', 'temp': temp})
-            logging.info('send: ' + str(temp))
+            # logging.info('send: ' + str(temp))
             resp = get_message(sock)
-            logging.info('get: ' + str(resp))
+            # logging.info('get: ' + str(resp))
             sock.close()
-            return resp['resp']
+            logging.info('RD: ' + str(resp['resp']))
+            if resp is None:
+                return resp
+            else:
+                return resp['resp']
         else:
-            logging.info('Cannot connect to server in rd_op')
+            logging.info('RD_OP: cannot connect to server')
             return None
 
     def in_op(self, temp):
@@ -35,9 +40,13 @@ class Client(object):
             send_message(sock, {'op': 'inp', 'temp': temp})
             resp = get_message(sock)
             sock.close()
-            return resp['resp']
+            logging.info('In: ' + str(resp['resp']))
+            if resp is None:
+                return resp
+            else:
+                return resp['resp']
         else:
-            logging.info('Cannot connect to server in in_op')
+            logging.info('IN_OP: cannot connect to server')
             return None
 
     def stop_op(self):
@@ -46,7 +55,11 @@ class Client(object):
             send_message(sock, {'op': 'stop'})
             resp = get_message(sock)
             sock.close()
-            return resp['resp']
+            logging.info('STOP_OP: ' + str(resp['resp']))
+            if resp is None:
+                return resp
+            else:
+                return resp['resp']
         else:
-            logging.info('Cannot connect to server in stop_op')
+            logging.info('STOP_OP: cannot connect to server')
             return None
