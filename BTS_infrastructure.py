@@ -51,20 +51,20 @@ class BTS_infrastructure(object):
 
         return tuple([self.rdp(temp, ts), ts])
 
-    def exit_r(self, pid):
+    def exit_r(self, pid, temp):
         for i in self.U:
             sock = connect_to_server(i)
             if sock is not None:
-                send_message(sock, {'op': 'exit', 'pid': pid})
+                send_message(sock, {'op': 'exit', 'pid': pid, 'temp': temp})
                 sock.close()
             else:
                 logging.info('EXIT_R: cannot exit cs with pid: ' + str(pid))
 
-    def paxos(self, pid, t, ts):
+    def paxos(self, pid, temp, t, ts):
         for i in ts.keys():
             ts[i][0] = connect_to_server(i)
             if ts[i][0] is not None:
-                send_message(ts[i][0], {'op': 'inp', 'pid': pid, 'tup': t})
+                send_message(ts[i][0], {'op': 'in', 'pid': pid, 'temp': temp, 'tup': t})
 
         tup_list = []
         for i in ts.keys():
@@ -90,8 +90,8 @@ class BTS_infrastructure(object):
 
     def rdp(self, temp, ts=None):
         if ts is None:
-            ts = {i: [None, None] for i in self.U}  # port: (socket, set)
-            for i in self.U:
+            ts = {i: [None, None] for i in self.QR}  # port: (socket, set)
+            for i in self.QR:
                 ts[i][0] = connect_to_server(i)
                 if ts[i][0] is not None:
                     send_message(ts[i][0], {'op': 'rd', 'temp': temp})
@@ -99,19 +99,19 @@ class BTS_infrastructure(object):
                 else:
                     ts.pop(i)
 
-            qr = set()
+            #qr = set()
             for i in ts.keys():
                 msg = get_message(ts[i][0])
                 ts[i][0].close()
                 if msg is not None:
                     ts[i][1] = msg['ts']
-                    qr.add(i)
+                    #qr.add(i)
                 else:
                     ts[i][1] = None
                 logging.info('RDP: receive ' + str(ts[i][1]) + ' from server ' + str(i))
 
-                if not set(self.QR).issubset(qr):
-                    return None
+                #if not set(self.QR).issubset(qr):
+                #    return None
 
         t = None
         for i in combinations(ts.keys(), self.AMOUNT_OF_ENEMIES + 1):
@@ -141,13 +141,13 @@ class BTS_infrastructure(object):
             logging.info('INP: enter with pid ' + str(pid) + ', temp ' + str(temp) + ', t: ' + str(t))
 
             if t is None:
-                self.exit_r(pid)
+                self.exit_r(pid, temp)
                 logging.info('INP: exit from cs with pid ' + str(pid))
                 return None
 
-            d = self.paxos(pid, t, ts)
-            self.exit_r(pid)
-            logging.info('INP: exit from cs with pid ' + str(pid))
+            d = self.paxos(pid, temp, t, ts)
+            #self.exit_r(pid)
+            #logging.info('INP: exit from cs with pid ' + str(pid))
 
             if d == t:
                 break
@@ -156,6 +156,8 @@ class BTS_infrastructure(object):
 
     def worker(self, client, pid):
         req = get_message(client)
+        if req is None:
+            return
 
         try:
             if req['op'] == 'out':
@@ -176,16 +178,17 @@ class BTS_infrastructure(object):
 
     def start_servers(self, ind1, ind2, file):
         for i in range(ind1, ind2):
-            if i in self.QR:
+            if self.U[i] in self.QR:
                 quorum = self.QR
             else:
-                quorum = [i]
+                quorum = [self.U[i]]
             try:
                 Popen('python BTS_server.py ' + str(i) + ' ' + str(self.U[i]) + ' ' + str(file) + ' ' +
                       ''.join(str(j) + ' ' for j in quorum), stdout=PIPE, stderr=PIPE, shell=True)
             except CalledProcessError:
                 logging.info("START_SERVERS: cannot start server on port " + str(self.U[i]))
-            logging.info("START_SERVERS: start server on port " + str(self.U[i]))
+            else:
+                logging.info("START_SERVERS: start server on port " + str(self.U[i]))
 
     def stop_servers(self):
         for i in self.U:
@@ -207,7 +210,7 @@ class BTS_infrastructure(object):
         s = socket(AF_INET, SOCK_STREAM)
         s.bind(('', self.INFRASTRUCTURE_PORT))
         s.listen(1)
-        """
+
         with ThreadPoolExecutor(10) as pool:
             while self.THREAD_POOL_ON:
                 try:
@@ -237,7 +240,7 @@ class BTS_infrastructure(object):
 
         s.close()
         self.stop_servers()
-
+        """
 
         logging.info('RUN: stop working')
         return True
