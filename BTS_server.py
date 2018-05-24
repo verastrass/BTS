@@ -8,17 +8,11 @@ import logging
 TS = set()
 RS = set()
 QR = {}         # temp: deque(sock, pid, temp, decisions1, AMOUNT_OF_DECISIONS1, decisions2, AMOUNT_OF_DECISIONS2)
+TYPES = {}
 SERVER_ID = 0
 SERVER_PORT = 0
 THREAD_POOL_ON = True
 SERVERS = []
-
-"""
-DECISIONS1 = {}
-AMOUNT_OF_DECISIONS1 = 0
-DECISIONS2 = {}
-AMOUNT_OF_DECISIONS2 = 0
-"""
 
 
 
@@ -35,34 +29,59 @@ def match(temp, tup):
     return True
 
 
+def equal_types(t1, t2):
+    if len(t1) != len(t2):
+        return False
+
+    for i, j in zip(t1, t2):
+        if i is 'NoneType' or j is 'NoneType':
+            continue
+        elif i != j:
+            return False
+
+    return True
+
+
+def get_type(tup):
+    t = []
+
+    for i in tup:
+        t.append(type(i))
+
+    return tuple(t)
+
+
 def enter_r(sock, pid, temp):
-    global QR
+    global QR, TYPES
     added = False
+    temp_type = get_type(temp)
 
     for i in QR.keys():
-        if match(i, temp) or match(temp, i):
+        if equal_types(i, temp_type):
             QR[i].append([sock, pid, temp, {}, 0, {}, 0])
             added = True
+            TYPES[temp] = i
             break
 
     if not added:
-        QR[temp] = deque()
-        QR[temp].append([sock, pid, temp, {}, 0, {}, 0])
+        QR[temp_type] = deque()
+        QR[temp_type].append([sock, pid, temp, {}, 0, {}, 0])
+        TYPES[temp] = temp_type
 
-    if QR[temp][0][1] == pid:
+    if QR[TYPES[temp]][0][1] == pid:
         logging.info('ENTER_R: ' + str(pid) + ' enter cs')
         temp_set = rdp(None, temp)
         send_message(sock, {'resp': 'go', 'ts': temp_set})
 
 
 def exit_r(temp, pid=None):
-    global QR
-    if pid is None or QR[temp][0][1] == pid:
-        logging.info('EXIT_R: ' + str(QR[temp][0][1]) + ' exit cs')
-        QR[temp].popleft()
-        if len(QR[temp]) > 0:
-            temp_set = rdp(None, QR[temp][0][2])
-            send_message(QR[temp][0][0], {'resp': 'go', 'ts': temp_set})
+    global QR, TYPES
+    if pid is None or QR[TYPES[temp]][0][1] == pid:
+        logging.info('EXIT_R: ' + str(QR[TYPES[temp]][0][1]) + ' exit cs')
+        QR[TYPES[temp]].popleft()
+        if len(QR[TYPES[temp]]) > 0:
+            temp_set = rdp(None, QR[TYPES[temp]][0][2])
+            send_message(QR[TYPES[temp]][0][0], {'resp': 'go', 'ts': temp_set})
 
 
 def out(t):
@@ -95,8 +114,8 @@ def rdp(sock, temp):
 
 
 def inp(sock, pid, temp, tup):
-    global TS, RS, QR
-    if QR[temp][0][1] == pid:
+    global TS, RS, QR, TYPES
+    if QR[TYPES[temp]][0][1] == pid:
         d = paxos(sock, temp, tup)
         if d is not None:
             if d not in TS:
@@ -108,67 +127,68 @@ def inp(sock, pid, temp, tup):
 
 
 def paxos(sock, temp, tup):
-    global SERVERS, QR, SERVER_PORT
-    if tup in TS:
+    global SERVERS, QR, SERVER_PORT, TYPES
+    temp_type = TYPES[temp]
+    if tup in TS and tup not in RS:
         accepted_value = tup
     else:
         accepted_value = None
 
-    logging.info('PAXOS ' + str(QR[temp][0][1]) + ': value ' + str(accepted_value) + ' accepted')
+    logging.info('PAXOS ' + str(QR[temp_type][0][1]) + ': value ' + str(accepted_value) + ' accepted')
 
     # DECISIONS1
-    QR[temp][0][3] = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup)
+    QR[temp_type][0][3] = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup)
 
     connected = 0
     for i in SERVERS:
         if i == SERVER_PORT:
-            QR[temp][0][3][i][0] = True
-            QR[temp][0][3][i][1] = accepted_value
+            QR[temp_type][0][3][i][0] = True
+            QR[temp_type][0][3][i][1] = accepted_value
         else:
             serv_sock = connect_to_server(i)
             if serv_sock is not None:
                 connected += 1
                 send_message(serv_sock,
-                             {'op': 'accept1', 'pid': QR[temp][0][1], 'temp': temp, 'port': SERVER_PORT, 'tup': accepted_value})
-                logging.info('PAXOS '+str(QR[temp][0][1])+': send accepted value '+str(accepted_value)+' to '+str(i))
+                             {'op': 'accept1', 'pid': QR[temp_type][0][1], 'temp': temp, 'port': SERVER_PORT, 'tup': accepted_value})
+                logging.info('PAXOS '+str(QR[temp_type][0][1])+': send accepted value '+str(accepted_value)+' to '+str(i))
                 serv_sock.close()
             else:
-                QR[temp][0][3].pop(i)
+                QR[temp_type][0][3].pop(i)
 
     i = 500
-    while QR[temp][0][4] < connected and i > 0:
+    while QR[temp_type][0][4] < connected and i > 0:
         i -= 1
 
-    logging.info('PAXOS ' + str(QR[temp][0][1]) + ': is accepted 1')
-    # logging.info("QR[temp][0][3]: " + str(QR[temp][0][3]))
+    logging.info('PAXOS ' + str(QR[temp_type][0][1]) + ': is accepted 1')
+    # logging.info("QR[temp_type][0][3]: " + str(QR[temp_type][0][3]))
     tup_dict = {}  # port: tup // ACCEPT1 results
-    for i in QR[temp][0][3].keys():
-        tup_dict[i] = QR[temp][0][3][i][1]
+    for i in QR[temp_type][0][3].keys():
+        tup_dict[i] = QR[temp_type][0][3][i][1]
 
     # DECISIONS2
-    QR[temp][0][5] = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup_dict)
+    QR[temp_type][0][5] = {i: [False, None] for i in SERVERS}  # port: (ans_flag, tup_dict)
     connected = 0
-    for i in QR[temp][0][3].keys():
+    for i in QR[temp_type][0][3].keys():
         if i == SERVER_PORT:
-            QR[temp][0][5][i][0] = True
-            QR[temp][0][5][i][1] = tup_dict
+            QR[temp_type][0][5][i][0] = True
+            QR[temp_type][0][5][i][1] = tup_dict
         else:
             serv_sock = connect_to_server(i)
             if serv_sock is not None:
                 connected += 1
                 send_message(serv_sock,
-                             {'op': 'accept2', 'pid': QR[temp][0][1], 'temp': temp, 'port': SERVER_PORT, 'tup_dict': tup_dict})
-                logging.info('PAXOS '+str(QR[temp][0][1])+': send accepted values '+str(tup_dict)+' to '+str(i))
+                             {'op': 'accept2', 'pid': QR[temp_type][0][1], 'temp': temp, 'port': SERVER_PORT, 'tup_dict': tup_dict})
+                logging.info('PAXOS '+str(QR[temp_type][0][1])+': send accepted values '+str(tup_dict)+' to '+str(i))
                 serv_sock.close()
             else:
-                QR[temp][0][5].pop(i)
+                QR[temp_type][0][5].pop(i)
 
     i = 500
-    while QR[temp][0][6] < connected and i > 0:
+    while QR[temp_type][0][6] < connected and i > 0:
         i -= 1
 
-    logging.info('PAXOS ' + str(QR[temp][0][1]) + ': is accepted 2')
-    # logging.info("QR[temp][0][5]: " + str(QR[temp][0][5]))
+    logging.info('PAXOS ' + str(QR[temp_type][0][1]) + ': is accepted 2')
+    # logging.info("QR[temp_type][0][5]: " + str(QR[temp_type][0][5]))
     tup_list1 = []
     try:
         for i in tup_dict.keys():
@@ -176,10 +196,10 @@ def paxos(sock, temp, tup):
                 tup_list1.append(accepted_value)
                 continue
             tup_list2 = []
-            for j in QR[temp][0][5].keys():
-                if j == i or not QR[temp][0][5][j][0]:
+            for j in QR[temp_type][0][5].keys():
+                if j == i or not QR[temp_type][0][5][j][0]:
                     continue
-                tup_list2.append(QR[temp][0][5][j][1][i])
+                tup_list2.append(QR[temp_type][0][5][j][1][i])
             # logging.info("tup_list2: " + str(tup_list2))
             c = Counter(tup_list2)
             mc = c.most_common(1)[0]
@@ -189,32 +209,34 @@ def paxos(sock, temp, tup):
             else:
                 tup_list1.append(None)
     except Exception as e:
-        logging.info('PAXOS ' + str(QR[temp][0][1]) + ': error ' + str(e))
+        logging.info('PAXOS ' + str(QR[temp_type][0][1]) + ': error ' + str(e))
 
     # logging.info("tup_list1: " + str(tup_list1))
     c = Counter(tup_list1)
     accepted_value = c.most_common(1)[0][0]
     send_message(sock, {'resp': accepted_value})
-    logging.info('PAXOS ' + str(QR[temp][0][1]) + ': send twice accepted value ' + str(accepted_value))
+    logging.info('PAXOS ' + str(QR[temp_type][0][1]) + ': send twice accepted value ' + str(accepted_value))
     return accepted_value
 
 
 def accept1(p, temp, server_port, tup):
-    global QR
-    if QR[temp][0][1] == p and not QR[temp][0][3][server_port][0]:
-        QR[temp][0][3][server_port][1] = tup
-        QR[temp][0][3][server_port][0] = True
-        QR[temp][0][4] += 1
-        logging.info('ACCEPT1 '+str(QR[temp][0][1])+': get accepted value '+str(tup)+' from port '+str(server_port))
+    global QR, TYPES
+    temp_type = TYPES[temp]
+    if QR[temp_type][0][1] == p and not QR[temp_type][0][3][server_port][0]:
+        QR[temp_type][0][3][server_port][1] = tup
+        QR[temp_type][0][3][server_port][0] = True
+        QR[temp_type][0][4] += 1
+        logging.info('ACCEPT1 '+str(QR[temp_type][0][1])+': get accepted value '+str(tup)+' from port '+str(server_port))
 
 
 def accept2(p, temp, server_port, tup_dict):
-    global QR
-    if QR[temp][0][1] == p and not QR[temp][0][5][server_port][0]:
-        QR[temp][0][5][server_port][1] = tup_dict
-        QR[temp][0][5][server_port][0] = True
-        QR[temp][0][6] += 1
-        logging.info('ACCEPT2 '+str(QR[temp][0][1])+': get accepted values '+str(tup_dict)+' from port '+str(server_port))
+    global QR, TYPES
+    temp_type = TYPES[temp]
+    if QR[temp_type][0][1] == p and not QR[temp_type][0][5][server_port][0]:
+        QR[temp_type][0][5][server_port][1] = tup_dict
+        QR[temp_type][0][5][server_port][0] = True
+        QR[temp_type][0][6] += 1
+        logging.info('ACCEPT2 '+str(QR[temp_type][0][1])+': get accepted values '+str(tup_dict)+' from port '+str(server_port))
 
 
 def worker(client):
@@ -228,8 +250,9 @@ def worker(client):
     elif req['op'] == 'rd':
         rdp(client, req['temp'])
     elif req['op'] == 'in':
+        inp(client, req['pid'], req['temp'], req['tup'])
         try:
-            inp(client, req['pid'], req['temp'], req['tup'])
+            pass
         except Exception as e:
             logging.info('INP: error ' + str(e))
     elif req['op'] == 'enter':
@@ -296,9 +319,9 @@ while THREAD_POOL_ON:
         client_s, client_addr = s.accept()
     except error:
         logging.error('MAIN: socket.error while accepting')
-        break
-    else:
-        worker(client_s)
+    break
+else:
+    worker(client_s)
 """
 
 s.close()

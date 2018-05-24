@@ -60,7 +60,7 @@ class BTS_infrastructure(object):
             else:
                 logging.info('EXIT_R: cannot exit cs with pid: ' + str(pid))
 
-    def paxos(self, pid, temp, t, ts):
+    def propose_learn(self, pid, temp, t, ts):
         for i in ts.keys():
             ts[i][0] = connect_to_server(i)
             if ts[i][0] is not None:
@@ -145,7 +145,7 @@ class BTS_infrastructure(object):
                 logging.info('INP: exit from cs with pid ' + str(pid))
                 return None
 
-            d = self.paxos(pid, temp, t, ts)
+            d = self.propose_learn(pid, temp, t, ts)
             #self.exit_r(pid)
             #logging.info('INP: exit from cs with pid ' + str(pid))
 
