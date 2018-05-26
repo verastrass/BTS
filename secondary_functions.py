@@ -4,7 +4,7 @@ import json
 
 
 def get_message(sock):
-    sock.settimeout(50)
+    # sock.settimeout(50)
     msg = b""
     tmp = b""
 
@@ -25,12 +25,12 @@ def get_message(sock):
 
 
 def send_message(sock, msg):
-    sock.send(pickle.dumps(msg))
+    return sock.send(pickle.dumps(msg))
 
 
 def connect_to_server(port):
     sock = socket(AF_INET, SOCK_STREAM)
-    i = 50
+    i = 100
 
     while i:
         try:

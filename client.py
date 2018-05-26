@@ -6,7 +6,7 @@ class Client(object):
 
     def __init__(self, port):
         self.port = port
-        logging.basicConfig(filename='client_log.txt', level=logging.DEBUG, format="%(asctime)s - %(message)s")
+        logging.basicConfig(filename='client_log.txt', level=logging.INFO, format="%(asctime)s - %(message)s")
 
     def out_op(self, tup):
         sock = connect_to_server(self.port)

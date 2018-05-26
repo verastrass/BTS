@@ -19,10 +19,15 @@ class BTS_infrastructure(object):
         self.AMOUNT_OF_CLIENTS = 0
         self.QW = self.U[0:size_of_QW]
         self.QR = self.U[-size_of_QR:]
-        logging.basicConfig(filename='infrastructure_log.txt', level=logging.DEBUG, format="%(asctime)s - %(message)s")
+        self.ENTER = True
+        logging.basicConfig(filename='infrastructure_log.txt', level=logging.INFO, format="%(asctime)s - %(message)s")
         logging.info('Infrastructure on port ' + str(self.INFRASTRUCTURE_PORT))
 
     def enter_r(self, pid, temp):
+        while not self.ENTER:
+            pass
+        self.ENTER = False
+
         ts = {i: [None, None] for i in self.U}  # port: (socket, set)
         for i in self.U:
             ts[i][0] = connect_to_server(i)
@@ -30,17 +35,17 @@ class BTS_infrastructure(object):
                 send_message(ts[i][0], {'op': 'enter', 'pid': pid, 'temp': temp})
                 logging.info('ENTER_R: send ' + str(temp) + ' to server ' + str(i))
             else:
-                if i in self.QR:
-                    return tuple([None, None])
-                else:
-                    ts.pop(i)
+                ts.pop(i)
+                logging.info('ENTER_R: server ' + str(i) + ' does not work')
 
+        self.ENTER = True
         qr = set()
         for i in ts.keys():
+            # logging.info('ENTER_R: socket ' + str(ts[i][0]))
             resp = get_message(ts[i][0])
             ts[i][0].close()
             if resp is None or resp['resp'] != 'go':
-                logging.info('ENTER_R: wrong respond from server ' + str(i))
+                logging.info('ENTER_R: wrong respond ' + str(resp) + ' from server ' + str(i))
                 ts[i][1] = None
             else:
                 ts[i][1] = resp['ts']
@@ -61,6 +66,7 @@ class BTS_infrastructure(object):
                 logging.info('EXIT_R: cannot exit cs with pid: ' + str(pid))
 
     def propose_learn(self, pid, temp, t, ts):
+        logging.info('PROPOSE_LEARN: propose ' + str(t))
         for i in ts.keys():
             ts[i][0] = connect_to_server(i)
             if ts[i][0] is not None:
@@ -68,12 +74,13 @@ class BTS_infrastructure(object):
 
         tup_list = []
         for i in ts.keys():
-            resp = get_message(ts[i][0])
-            ts[i][0].close()
-            if resp is not None:
-                tup_list.append(resp['resp'])
-            else:
-                tup_list.append(None)
+            if ts[i][0] is not None:
+                resp = get_message(ts[i][0])
+                ts[i][0].close()
+                if resp is not None:
+                    tup_list.append(resp['resp'])
+                else:
+                    tup_list.append(None)
 
         c = Counter(tup_list)
         return c.most_common(1)[0][0]
@@ -87,6 +94,7 @@ class BTS_infrastructure(object):
                 sock.close()
             else:
                 logging.info('OUT: cannot connect to server ' + str(i))
+        logging.info('OUT: wrote ' + str(t))
 
     def rdp(self, temp, ts=None):
         if ts is None:
@@ -133,6 +141,7 @@ class BTS_infrastructure(object):
                 t = ts_intersection.pop()
                 break
 
+        logging.info('RDP: red ' + str(t))
         return t
 
     def inp(self, pid, temp):
@@ -152,6 +161,7 @@ class BTS_infrastructure(object):
             if d == t:
                 break
 
+        logging.info('INP: pid ' + str(pid) + ' deleted ' + str(t))
         return t
 
     def worker(self, client, pid):
@@ -168,6 +178,7 @@ class BTS_infrastructure(object):
                 send_message(client, {'resp': self.inp(pid, req['temp'])})
             elif req['op'] == 'stop':
                 self.THREAD_POOL_ON = False
+                self.stop_servers()
                 send_message(client, {'resp': 'ok'})
             else:
                 logging.info('WORKER: wrong request ' + str(req))
@@ -178,13 +189,9 @@ class BTS_infrastructure(object):
 
     def start_servers(self, ind1, ind2, file):
         for i in range(ind1, ind2):
-            if self.U[i] in self.QR:
-                quorum = self.QR
-            else:
-                quorum = [self.U[i]]
             try:
                 Popen('python BTS_server.py ' + str(i) + ' ' + str(self.U[i]) + ' ' + str(file) + ' ' +
-                      ''.join(str(j) + ' ' for j in quorum), stdout=PIPE, stderr=PIPE, shell=True)
+                      ''.join(str(j) + ' ' for j in self.U), stdout=PIPE, stderr=PIPE, shell=True)
             except CalledProcessError:
                 logging.info("START_SERVERS: cannot start server on port " + str(self.U[i]))
             else:
@@ -195,8 +202,12 @@ class BTS_infrastructure(object):
             s = connect_to_server(i)
             if s is not None:
                 send_message(s, {'op': 'stop'})
+                resp = get_message(s)
                 s.close()
-                logging.info("STOP_SERVERS: stop server on port " + str(i))
+                if resp['resp'] != 'ok':
+                    logging.info("STOP_SERVERS: cannot stop server on port " + str(i))
+                else:
+                    logging.info("STOP_SERVERS: stop server on port " + str(i))
             else:
                 logging.info("STOP_SERVERS: cannot stop server on port " + str(i))
 
@@ -224,7 +235,6 @@ class BTS_infrastructure(object):
                 else:
                     pool.submit(self.worker, client_s, self.AMOUNT_OF_CLIENTS)
 
-        self.stop_servers()
         s.close()
 
         """
@@ -239,7 +249,6 @@ class BTS_infrastructure(object):
                 self.worker(client_s, self.AMOUNT_OF_CLIENTS)
 
         s.close()
-        self.stop_servers()
         """
 
         logging.info('RUN: stop working')
