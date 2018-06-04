@@ -8,58 +8,43 @@ class Client(object):
         self.port = port
         logging.basicConfig(filename='client_log.txt', level=logging.INFO, format="%(asctime)s - %(message)s")
 
-    def out_op(self, tup):
+    def __op(self, op_type, tup=None):
         sock = connect_to_server(self.port)
         if sock is not None:
-            send_message(sock, {'op': 'out', 'tup': tup})
-            sock.close()
-            logging.info('OUT: ' + str(tup))
+            if op_type == 'out':
+                req = {'op': op_type, 'tup': tup}
+            elif op_type in ['rd', 'in']:
+                req = {'op': op_type, 'temp': tup}
+            elif op_type == 'stop':
+                req = {'op': op_type}
+            send_message(sock, req)
+            if op_type in ['rd', 'in', 'stop']:
+                resp = get_message(sock)
+                sock.close()
+                if resp is None:
+                    return resp
+                return resp['resp']
+            else:
+                sock.close()
         else:
-            logging.info('OUT_OP: cannot connect to server')
+            logging.info('__OP (' + str(op_type) + '): cannot connect to server')
+            return None
+
+    def out_op(self, tup):
+        self.__op('out', tup)
+        logging.info('OUT: ' + str(tup))
 
     def rd_op(self, temp):
-        sock = connect_to_server(self.port)
-        if sock is not None:
-            send_message(sock, {'op': 'rdp', 'temp': temp})
-            # logging.info('send: ' + str(temp))
-            resp = get_message(sock)
-            # logging.info('get: ' + str(resp))
-            sock.close()
-            logging.info('RD: ' + str(resp['resp']))
-            if resp is None:
-                return resp
-            else:
-                return resp['resp']
-        else:
-            logging.info('RD_OP: cannot connect to server')
-            return None
+        resp = self.__op('rd', temp)
+        logging.info('RD: ' + str(resp))
+        return resp
 
     def in_op(self, temp):
-        sock = connect_to_server(self.port)
-        if sock is not None:
-            send_message(sock, {'op': 'inp', 'temp': temp})
-            resp = get_message(sock)
-            sock.close()
-            logging.info('In: ' + str(resp['resp']))
-            if resp is None:
-                return resp
-            else:
-                return resp['resp']
-        else:
-            logging.info('IN_OP: cannot connect to server')
-            return None
+        resp = self.__op('in', temp)
+        logging.info('IN: ' + str(resp))
+        return resp
 
     def stop_op(self):
-        sock = connect_to_server(self.port)
-        if sock is not None:
-            send_message(sock, {'op': 'stop'})
-            resp = get_message(sock)
-            sock.close()
-            logging.info('STOP_OP: ' + str(resp['resp']))
-            if resp is None:
-                return resp
-            else:
-                return resp['resp']
-        else:
-            logging.info('STOP_OP: cannot connect to server')
-            return None
+        resp = self.__op('stop')
+        logging.info('STOP: ' + str(resp))
+        return resp

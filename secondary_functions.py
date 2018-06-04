@@ -1,10 +1,10 @@
 from socket import socket, AF_INET, SOCK_STREAM, error
-import pickle # _pickle as
+import pickle
 import json
 
 
 def get_message(sock):
-    # sock.settimeout(50)
+    # sock.settimeout(600)
     msg = b""
     tmp = b""
 
@@ -20,8 +20,7 @@ def get_message(sock):
 
     if len(msg) > 0:
         return pickle.loads(msg)
-    else:
-        return None
+    return None
 
 
 def send_message(sock, msg):

@@ -41,7 +41,6 @@ class BTS_infrastructure(object):
         self.ENTER = True
         qr = set()
         for i in ts.keys():
-            # logging.info('ENTER_R: socket ' + str(ts[i][0]))
             resp = get_message(ts[i][0])
             ts[i][0].close()
             if resp is None or resp['resp'] != 'go':
@@ -65,8 +64,8 @@ class BTS_infrastructure(object):
             else:
                 logging.info('EXIT_R: cannot exit cs with pid: ' + str(pid))
 
-    def propose_learn(self, pid, temp, t, ts):
-        logging.info('PROPOSE_LEARN: propose ' + str(t))
+    def paxos(self, pid, temp, t, ts):
+        logging.info('PAXOS: propose ' + str(t))
         for i in ts.keys():
             ts[i][0] = connect_to_server(i)
             if ts[i][0] is not None:
@@ -83,7 +82,11 @@ class BTS_infrastructure(object):
                     tup_list.append(None)
 
         c = Counter(tup_list)
-        return c.most_common(1)[0][0]
+        mc = c.most_common(1)[0]
+        if mc[1] > self.AMOUNT_OF_ENEMIES:
+            return mc[0]
+
+        return None
 
     def out(self, t):
         for i in self.QW:
@@ -94,7 +97,7 @@ class BTS_infrastructure(object):
                 sock.close()
             else:
                 logging.info('OUT: cannot connect to server ' + str(i))
-        logging.info('OUT: wrote ' + str(t))
+        logging.info('OUT: recorded ' + str(t))
 
     def rdp(self, temp, ts=None):
         if ts is None:
@@ -107,19 +110,14 @@ class BTS_infrastructure(object):
                 else:
                     ts.pop(i)
 
-            #qr = set()
             for i in ts.keys():
                 msg = get_message(ts[i][0])
                 ts[i][0].close()
                 if msg is not None:
                     ts[i][1] = msg['ts']
-                    #qr.add(i)
                 else:
                     ts[i][1] = None
                 logging.info('RDP: receive ' + str(ts[i][1]) + ' from server ' + str(i))
-
-                #if not set(self.QR).issubset(qr):
-                #    return None
 
         t = None
         for i in combinations(ts.keys(), self.AMOUNT_OF_ENEMIES + 1):
@@ -134,14 +132,12 @@ class BTS_infrastructure(object):
                 if len(ts_intersection) == 0:
                     break
 
-            if ts_intersection is None:
-                continue
+            if ts_intersection is not None:
+                if len(ts_intersection) > 0:
+                    t = ts_intersection.pop()
+                    break
 
-            if len(ts_intersection) > 0:
-                t = ts_intersection.pop()
-                break
-
-        logging.info('RDP: red ' + str(t))
+        logging.info('RDP: selected ' + str(t))
         return t
 
     def inp(self, pid, temp):
@@ -154,9 +150,7 @@ class BTS_infrastructure(object):
                 logging.info('INP: exit from cs with pid ' + str(pid))
                 return None
 
-            d = self.propose_learn(pid, temp, t, ts)
-            #self.exit_r(pid)
-            #logging.info('INP: exit from cs with pid ' + str(pid))
+            d = self.paxos(pid, temp, t, ts)
 
             if d == t:
                 break
@@ -166,26 +160,24 @@ class BTS_infrastructure(object):
 
     def worker(self, client, pid):
         req = get_message(client)
-        if req is None:
-            return
-
-        try:
-            if req['op'] == 'out':
-                self.out(req['tup'])
-            elif req['op'] == 'rdp':
-                send_message(client, {'resp': self.rdp(req['temp'])})
-            elif req['op'] == 'inp':
-                send_message(client, {'resp': self.inp(pid, req['temp'])})
-            elif req['op'] == 'stop':
-                self.THREAD_POOL_ON = False
-                self.stop_servers()
-                send_message(client, {'resp': 'ok'})
-            else:
+        if req is not None:
+            try:
+                if req['op'] == 'out':
+                    self.out(req['tup'])
+                elif req['op'] == 'rd':
+                    send_message(client, {'resp': self.rdp(req['temp'])})
+                elif req['op'] == 'in':
+                    send_message(client, {'resp': self.inp(pid, req['temp'])})
+                elif req['op'] == 'stop':
+                    self.THREAD_POOL_ON = False
+                    self.stop_servers()
+                    send_message(client, {'resp': 'ok'})
+                else:
+                    logging.info('WORKER: wrong request ' + str(req))
+            except KeyError:
                 logging.info('WORKER: wrong request ' + str(req))
-        except KeyError:
-            logging.info('WORKER: wrong request ' + str(req))
 
-        client.close()
+            client.close()
 
     def start_servers(self, ind1, ind2, file):
         for i in range(ind1, ind2):
@@ -193,9 +185,9 @@ class BTS_infrastructure(object):
                 Popen('python BTS_server.py ' + str(i) + ' ' + str(self.U[i]) + ' ' + str(file) + ' ' +
                       ''.join(str(j) + ' ' for j in self.U), stdout=PIPE, stderr=PIPE, shell=True)
             except CalledProcessError:
-                logging.info("START_SERVERS: cannot start server on port " + str(self.U[i]))
+                logging.info('START_SERVERS: cannot start server on port ' + str(self.U[i]))
             else:
-                logging.info("START_SERVERS: start server on port " + str(self.U[i]))
+                logging.info('START_SERVERS: start server on port ' + str(self.U[i]))
 
     def stop_servers(self):
         for i in self.U:
@@ -205,11 +197,11 @@ class BTS_infrastructure(object):
                 resp = get_message(s)
                 s.close()
                 if resp['resp'] != 'ok':
-                    logging.info("STOP_SERVERS: cannot stop server on port " + str(i))
+                    logging.info('STOP_SERVERS: cannot stop server on port ' + str(i))
                 else:
-                    logging.info("STOP_SERVERS: stop server on port " + str(i))
+                    logging.info('STOP_SERVERS: stop server on port ' + str(i))
             else:
-                logging.info("STOP_SERVERS: cannot stop server on port " + str(i))
+                logging.info('STOP_SERVERS: cannot stop server on port ' + str(i))
 
     def run(self):
         if self.AMOUNT_OF_ENEMIES >= self.AMOUNT_OF_SERVERS:
