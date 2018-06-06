@@ -13,7 +13,7 @@
   foreground,
   contents={%
     \raisebox{\dp\strutbox}[\layerheight][0pt]{%
-      \parbox[b]{\layerwidth}{\centering \bfseries Ростов-на-Дону --- \thedate%
+      \parbox[b]{\layerwidth}{\centering Ростов-на-Дону\\ \thedate%
        \\\mbox{}
        }}%
   }
@@ -26,43 +26,37 @@
   %
   \begin{titlepage}
   %
-  {\bfseries
     \thispagestyle{titlepage}
 
     {\centering
     %
-    \MakeTextUppercase {МИНОБРНАУКИ РОССИИ}
+    \MakeTextUppercase {МИНИСТЕРСТВО ОБРАЗОВАНИЯ И НАУКИ РФ}
 
     \vgap
 
     Федеральное государственное автономное образовательное\\
     учреждение высшего образования\\
-    <<Южный федеральный университет>>
+    \MakeTextUppercase {Южный федеральный университет}
 
     \vgap
 
 	Институт математики, механики и компьютерных наук
-    им.~И.\,И.\,Воровича\\Кафедра информатики и вычислительного эксперимента
-
-    
-	\vspace* {\fill}
-	%\vgap
-	%\vgap
-{\large
-	\me
-
-    %\direction
+    имени~И.\,И.\,Воровича
 
     \vgap
+
+    \direction
+
+    \vspace* {\fill}
 
     \ifthenelse{\value{worktype} = 2}{%
     \me
 
-    \vgap}{\vgap \vgap}
+    \vgap}{}
 
     {\usefont{T2A}{PTSansCaption-TLF}{m}{n}
     \MakeTextUppercase{\thetitle}}
-}
+
     \ifthenelse{\value{worktype} = 2}{%
      \vgap
 
@@ -75,16 +69,30 @@
     \ifthenelse{\value{worktype} = 1 \OR \value{worktype} = 3}{
      \vgap
 
-    \MakeTextUppercase{Выпускная квалификационная работа}\\
-    \mbox{по\,направлению\,\direction}
+    Выпускная квалификационная работа\\
+    на степень бакалавра
     }{}%
 
-	%\direction
-	\vgap
-	Научный руководитель ---\\
-	\supervisor
     \vspace {\fill}
-\if 0
+
+    \begin{flushright}
+    \ifthenelse{\value{worktype} = 0 \OR 
+                \value{worktype} = 1 \OR
+                \value{worktype} = 3}{
+      \bystudent \ifthenelse{\value{worktype} = 0}{3}{4}\ курса\\
+      \byme
+    }{}
+
+    \vgap
+
+    Научный руководитель:\\
+    \supervisor\\
+    \ifthenelse{\value{worktype} = 2}{%
+    Рецензент:\\
+    ученая степень, ученое звание, должность
+    И. О. Фамилия
+    }{}
+	\end{flushright}
 \ifthenelse{\value{worktype} = 0}{
 \vspace{\fill}
         \begin{flushleft}
@@ -98,19 +106,18 @@
 \ifthenelse{\value{worktype} = 1 \OR \value{worktype} = 3}{
 \vspace{\fill}
         \begin{flushleft}
-Допущено к защите:\\руководитель направления ФИИТ
+Допущено к защите:\\заведующий кафедры ИВЭ
 \underline{\hspace{4cm}}
 В.\,С.\,Пилиди
         \end{flushleft}
 }{}
-\fi
+
 
   	\vspace {\fill}
-  	\vspace {\fill}
-  %Ростов-на-Дону 
-  
-  %\thedate
-}
+  %Ростов-на-Дону
+
+    %\thedate
+
   }\end{titlepage}
   %
   %
