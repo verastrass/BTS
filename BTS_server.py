@@ -164,7 +164,7 @@ def paxos(sock, temp, tup):
             else:
                 QR[temp_type][0][3].pop(i)
 
-    i = 10000 * len(SERVERS)
+    i = 1000000 * len(SERVERS)
     while QR[temp_type][0][4] < connected and i > 0:
         i -= 1
         pass
@@ -191,7 +191,7 @@ def paxos(sock, temp, tup):
             else:
                 QR[temp_type][0][5].pop(i)
 
-    i = 10000 * len(SERVERS)
+    i = 1000000 * len(SERVERS)
     while QR[temp_type][0][6] < connected and i > 0:
         i -= 1
         pass

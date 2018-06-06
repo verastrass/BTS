@@ -18,7 +18,7 @@ class BTS_infrastructure(object):
         self.THREAD_POOL_ON = True
         self.AMOUNT_OF_CLIENTS = 0
         self.QW = self.U[0:size_of_QW]
-        self.QR = self.U[-size_of_QR:]
+        self.QR = self.U[0:size_of_QR]   # [-size_of_QR:]
         self.ENTER = True
         logging.basicConfig(filename='infrastructure_log.txt', level=logging.INFO, format="%(asctime)s - %(message)s")
         logging.info('Infrastructure on port ' + str(self.INFRASTRUCTURE_PORT))
@@ -38,7 +38,6 @@ class BTS_infrastructure(object):
                 ts.pop(i)
                 logging.info('ENTER_R: server ' + str(i) + ' does not work')
 
-        self.ENTER = True
         qr = set()
         for i in ts.keys():
             resp = get_message(ts[i][0])
@@ -49,6 +48,7 @@ class BTS_infrastructure(object):
             else:
                 ts[i][1] = resp['ts']
                 qr.add(i)
+        self.ENTER = True
 
         if not set(self.QR).issubset(qr):
             return tuple([None, None])
